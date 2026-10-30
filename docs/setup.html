@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Step-by-step: put your whole Google Drive on your Mac as a disk with Ripple Drive. Free and open source, about 30 minutes.">
+<link rel="icon" href="media/app-icon.png">
+<title>Ripple Drive Setup Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@1&display=swap">
+<style>
+/* Layout: one reading column; numbered step cards with a progress rail, commands as copyable terminal lines. */
+:root {
+  --bg: #f4f6fa; --surface: #ffffff; --sunk: #eef1f7; --ink: #121620; --muted: #5b6475; --line: #dde2ec;
+  --accent: #2867e8; --accent-ink: #ffffff; --accent-soft: #e6eefd; --ok: #1f8a4c; --ok-soft: #e3f4ea; --warn: #a15c07; --warn-soft: #fdf0dc;
+  --term: #10141c; --term-ink: #e6ebf4; --term-dim: #8b95a8;
+  --f-body: "Geist", ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --f-accent: "Instrument Serif", Georgia, serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c0f15; --surface: #141923; --sunk: #10141c; --ink: #e8ecf4; --muted: #9aa3b5; --line: #262d3a;
+  --accent: #6e9bff; --accent-ink: #0c0f15; --accent-soft: #1a2640; --ok: #5ccf8b; --ok-soft: #13291d; --warn: #f0b45c; --warn-soft: #2c2111;
+  --term: #07090d; --term-ink: #e6ebf4; --term-dim: #7f8aa0; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0c0f15; --surface: #141923; --sunk: #10141c; --ink: #e8ecf4; --muted: #9aa3b5; --line: #262d3a;
+  --accent: #6e9bff; --accent-ink: #0c0f15; --accent-soft: #1a2640; --ok: #5ccf8b; --ok-soft: #13291d; --warn: #f0b45c; --warn-soft: #2c2111;
+  --term: #07090d; --term-ink: #e6ebf4; --term-dim: #7f8aa0; color-scheme: dark; }
+
+body { background: var(--bg); color: var(--ink); font: 400 1.0625rem/1.6 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 44rem; margin: 0 auto; padding-block: 2.5rem 4rem; display: flex; flex-direction: column; gap: 2.25rem; }
+a { color: var(--accent); text-underline-offset: .18em; }
+a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.15; letter-spacing: -.02em; }
+p { margin: 0; }
+.mono, code, kbd { font-family: var(--f-mono); }
+code { font-size: .9em; background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: .05em .35em; overflow-wrap: anywhere; }
+kbd { font-size: .85em; background: var(--surface); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: .05em .4em; }
+.path { font-weight: 600; }
+
+/* header */
+.top { display: flex; flex-direction: column; gap: 1rem; }
+.brand { display: flex; align-items: center; gap: .6rem; font-weight: 600; letter-spacing: -.01em; }
+.brand svg { width: 30px; height: 30px; color: var(--ink); }
+h1 { font-size: clamp(2rem, 6vw, 2.75rem); font-weight: 700; }
+h1 em { font-family: var(--f-accent); font-weight: 400; font-style: italic; color: var(--accent); letter-spacing: -.01em; }
+.lede { color: var(--muted); font-size: 1.125rem; max-width: 36rem; }
+.facts { display: flex; flex-wrap: wrap; gap: .5rem; }
+.fact { font: 500 .8125rem var(--f-mono); letter-spacing: .01em; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .3rem .7rem; background: var(--surface); }
+
+.note { display: flex; gap: .85rem; align-items: flex-start; background: var(--accent-soft); border-radius: 14px; padding: 1rem 1.1rem; }
+.note svg { flex: none; width: 22px; height: 22px; color: var(--accent); margin-top: .15rem; }
+.note.warn { background: var(--warn-soft); } .note.warn svg { color: var(--warn); }
+.note p + p { margin-top: .35rem; }
+
+/* need list */
+section > h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
+.need { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; }
+.need div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .85rem 1rem; min-width: 0; }
+.need b { display: block; font-weight: 600; } .need span { color: var(--muted); font-size: .9375rem; }
+
+/* progress */
+.prog { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; align-items: center; gap: .9rem; background: var(--bg); padding-block: .7rem; border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.bar { flex: 1; height: 8px; border-radius: 99px; background: var(--sunk); border: 1px solid var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .3s ease; }
+.prog-t { font: 500 .875rem var(--f-mono); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* steps */
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1rem; counter-reset: st; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.25rem 1.25rem 1.1rem; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: .25rem 1rem; }
+.step.done { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.num { grid-row: 1 / span 3; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: grid; place-items: center; font: 600 1rem var(--f-mono); background: var(--sunk); color: var(--ink); border: 1px solid var(--line); }
+.step.done .num { background: var(--ok); color: var(--surface); border-color: var(--ok); }
+.st-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; }
+.st-h h3 { font-size: 1.1875rem; font-weight: 650; }
+.time { font: 500 .8125rem var(--f-mono); color: var(--muted); }
+.st-b { display: flex; flex-direction: column; gap: .7rem; margin-top: .35rem; min-width: 0; }
+.st-b ol, .st-b ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .35rem; }
+.st-b li::marker { color: var(--muted); }
+.why { color: var(--muted); font-size: .9375rem; }
+.chk { display: inline-flex; align-items: center; gap: .55rem; margin-top: .35rem; font-size: .9375rem; color: var(--muted); cursor: pointer; width: fit-content; }
+.chk input { width: 1.15rem; height: 1.15rem; accent-color: var(--ok); margin: 0; }
+.step.done .chk { color: var(--ok); font-weight: 600; }
+
+/* terminal lines */
+.cmd { display: flex; align-items: stretch; background: var(--term); color: var(--term-ink); border-radius: 12px; overflow: hidden; min-width: 0; }
+.cmd pre { margin: 0; padding: .8rem 1rem; font: 400 .9rem/1.5 var(--f-mono); overflow-x: auto; flex: 1; min-width: 0; white-space: pre; }
+.cmd pre::before { content: "$ "; color: var(--term-dim); }
+.cmd.plain pre::before { content: ""; }
+.copy { flex: none; border: 0; border-left: 1px solid rgba(255,255,255,.08); background: transparent; color: var(--term-dim); font: 500 .8125rem var(--f-mono); padding: 0 1rem; cursor: pointer; }
+.copy:hover { color: var(--term-ink); }
+.copy.ok { color: var(--ok); }
+
+/* finish + help */
+.fin { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 1.4rem 1.3rem; display: flex; flex-direction: column; gap: .9rem; }
+.fin h2 { font-size: 1.5rem; } .fin h2 em { font-family: var(--f-accent); font-style: italic; font-weight: 400; color: var(--accent); }
+.uses { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .6rem 1.2rem; margin: 0; }
+.uses div { min-width: 0; } .uses dt { font-weight: 600; } .uses dd { margin: 0; color: var(--muted); font-size: .9375rem; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .2rem 1rem; }
+details + details { margin-top: .6rem; }
+summary { cursor: pointer; font-weight: 600; padding: .7rem 0; list-style-position: outside; }
+details > div { padding: 0 0 .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .55rem; }
+details > div .cmd { color: var(--term-ink); }
+footer { color: var(--muted); font-size: .875rem; border-top: 1px solid var(--line); padding-top: 1.2rem; display: flex; flex-direction: column; gap: .4rem; }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><svg id="mark" viewBox="0 0 256 256" aria-hidden="true"></svg>Ripple Drive</div>
+    <h1>Set up Ripple Drive <em>on your Mac</em></h1>
+    <p class="lede">Your whole Google Drive as a disk in Finder. Files stream as you open them, so they barely use any space on your Mac. You do this once; it takes about 30 minutes.</p>
+    <div class="facts"><span class="fact">Free · open source</span><span class="fact">macOS 26 or later</span><span class="fact">Apple Silicon</span><span class="fact">~30 min, once</span></div>
+  </header>
+
+  <div class="note" role="note">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+    <div><p><b>Do this on your Mac, not your phone.</b> If you opened this from Instagram, send the link to your Mac (AirDrop, Notes or email) and follow along there.</p></div>
+  </div>
+
+  <section aria-labelledby="need">
+    <h2 id="need">What you need</h2>
+    <div class="need">
+      <div><b>A Mac with an Apple chip</b><span>Apple menu › About This Mac shows “Chip: Apple M…”</span></div>
+      <div><b>macOS 26 or later</b><span>Same window, under “macOS”.</span></div>
+      <div><b>A Google account</b><span>The one whose Drive you want on your Mac.</span></div>
+      <div><b>Your Mac password</b><span>The installer asks for it once.</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="steps-h">
+    <h2 id="steps-h">Step by step</h2>
+    <div class="prog" aria-live="polite"><div class="bar"><i id="pbar"></i></div><span class="prog-t" id="ptext">0 of 10 done</span></div>
+    <ol class="steps" id="steps">
+
+      <li class="step" id="s1"><span class="num">1</span>
+        <div class="st-h"><h3>Turn on 2-Step Verification</h3><span class="time">2 min</span></div>
+        <div class="st-b">
+          <p class="why">Google Cloud only opens for accounts with it switched on.</p>
+          <ol><li>Open <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>.</li>
+            <li>Under “How you sign in to Google”, turn on <span class="path">2-Step Verification</span>. Skip this if it’s already on.</li></ol>
+          <label class="chk"><input type="checkbox" id="c1"> Done</label>
+        </div></li>
+
+      <li class="step" id="s2"><span class="num">2</span>
+        <div class="st-h"><h3>Create a Google Cloud project</h3><span class="time">2 min</span></div>
+        <div class="st-b">
+          <p class="why">This gives Ripple Drive its own free key to your Drive, separate from everyone else’s.</p>
+          <ol><li>Open <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> and accept the terms if asked.</li>
+            <li>Click the project picker at the top › <span class="path">New project</span>.</li>
+            <li>Name it <code>Ripple Drive</code>, click <span class="path">Create</span>, then select it in the picker.</li></ol>
+          <label class="chk"><input type="checkbox" id="c2"> Done</label>
+        </div></li>
+
+      <li class="step" id="s3"><span class="num">3</span>
+        <div class="st-h"><h3>Turn on the Google Drive API</h3><span class="time">1 min</span></div>
+        <div class="st-b">
+          <ol><li>Open <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API</a> (with your Ripple Drive project selected).</li>
+            <li>Click <span class="path">Enable</span>.</li></ol>
+          <label class="chk"><input type="checkbox" id="c3"> Done</label>
+        </div></li>
+
+      <li class="step" id="s4"><span class="num">4</span>
+        <div class="st-h"><h3>Set up the sign-in screen</h3><span class="time">4 min</span></div>
+        <div class="st-b">
+          <ol><li>Open <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth Platform</a> and click <span class="path">Get started</span>.</li>
+            <li>App name <code>Ripple Drive</code>, support email: yours. Audience: <span class="path">External</span>. Contact email: yours. Tick the agreement, then <span class="path">Create</span>.</li>
+            <li>Go to <span class="path">Audience › Test users › Add users</span>, add your own Gmail address, <span class="path">Save</span>.</li>
+            <li>Go to <span class="path">Data access › Add or remove scopes</span>. Under “Manually add scopes”, paste this, click <span class="path">Add to table</span>, then <span class="path">Update</span> and <span class="path">Save</span>:</li></ol>
+          <div class="cmd plain"><pre>https://www.googleapis.com/auth/drive</pre><button class="copy" type="button">Copy</button></div>
+          <label class="chk"><input type="checkbox" id="c4"> Done</label>
+        </div></li>
+
+      <li class="step" id="s5"><span class="num">5</span>
+        <div class="st-h"><h3>Create your client ID</h3><span class="time">2 min</span></div>
+        <div class="st-b">
+          <ol><li>Go to <span class="path">Clients › Create client</span>.</li>
+            <li>Application type: <span class="path">Desktop app</span>. Name: <code>Ripple Drive Mac</code>. Click <span class="path">Create</span>.</li>
+            <li>Copy the <b>Client ID</b> and the <b>Client secret</b> into a note, and click <span class="path">Download JSON</span> as a backup. Google may not show the secret again.</li></ol>
+          <div class="note warn" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+            <p>Keep the secret to yourself. Don’t paste it in a chat, a comment or a DM. You only paste it into Terminal in step 8.</p></div>
+          <label class="chk"><input type="checkbox" id="c5"> Done</label>
+        </div></li>
+
+      <li class="step" id="s6"><span class="num">6</span>
+        <div class="st-h"><h3>Download Ripple Drive</h3><span class="time">1 min</span></div>
+        <div class="st-b">
+          <ol><li>Open <a href="https://github.com/kundankishore8929-gif/ripple-drive" target="_blank" rel="noopener">github.com/kundankishore8929-gif/ripple-drive</a>.</li>
+            <li>Click the green <span class="path">Code</span> button › <span class="path">Download ZIP</span>.</li>
+            <li>Open the ZIP in Downloads. You get a folder called <code>ripple-drive-main</code>.</li></ol>
+          <label class="chk"><input type="checkbox" id="c6"> Done</label>
+        </div></li>
+
+      <li class="step" id="s7"><span class="num">7</span>
+        <div class="st-h"><h3>Install Homebrew, if you don’t have it</h3><span class="time">5 min</span></div>
+        <div class="st-b">
+          <p class="why">Homebrew installs fuse-t, the piece that lets macOS show your Drive as a disk.</p>
+          <ol><li>Open <span class="path">Terminal</span> (press <kbd>⌘</kbd> <kbd>Space</kbd>, type “Terminal”, press <kbd>Return</kbd>).</li>
+            <li>Check whether you have it. If you see a version number, skip to step 8.</li></ol>
+          <div class="cmd"><pre>brew --version</pre><button class="copy" type="button">Copy</button></div>
+          <ol start="3"><li>If it says “command not found”, paste this and follow what it says:</li></ol>
+          <div class="cmd"><pre>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</pre><button class="copy" type="button">Copy</button></div>
+          <ol start="4"><li>When it finishes, it prints “Next steps” with two or three commands. Copy and run those too.</li></ol>
+          <label class="chk"><input type="checkbox" id="c7"> Done</label>
+        </div></li>
+
+      <li class="step" id="s8"><span class="num">8</span>
+        <div class="st-h"><h3>Run the installer</h3><span class="time">5–10 min</span></div>
+        <div class="st-b">
+          <p>In Terminal, run these two lines one after the other:</p>
+          <div class="cmd"><pre>cd ~/Downloads/ripple-drive-main</pre><button class="copy" type="button">Copy</button></div>
+          <div class="cmd"><pre>zsh install.sh</pre><button class="copy" type="button">Copy</button></div>
+          <p>Along the way:</p>
+          <ul><li>If a window asks to install <b>Command Line Tools</b>, click Install. When it’s done, run <code>zsh install.sh</code> again.</li>
+            <li>If macOS asks whether Terminal may access Downloads, click <span class="path">Allow</span>.</li>
+            <li>Type your Mac password when asked. It stays invisible while you type.</li>
+            <li>Paste your <b>Client ID</b> and press <kbd>Return</kbd>, then the <b>Client secret</b> and <kbd>Return</kbd>. The secret stays hidden.</li></ul>
+          <label class="chk"><input type="checkbox" id="c8"> Done</label>
+        </div></li>
+
+      <li class="step" id="s9"><span class="num">9</span>
+        <div class="st-h"><h3>Sign in with Google</h3><span class="time">1 min</span></div>
+        <div class="st-b">
+          <ol><li>Your browser opens Google’s sign-in. Pick your account.</li>
+            <li>On “Google hasn’t verified this app”, click <span class="path">Advanced › Go to Ripple Drive</span>. It’s the app you just made, so this is expected.</li>
+            <li>Tick the box to let Ripple Drive see and manage your Drive files, then click <span class="path">Continue</span>.</li>
+            <li>Back in Terminal you’ll see “Signed in.”</li></ol>
+          <label class="chk"><input type="checkbox" id="c9"> Done</label>
+        </div></li>
+
+      <li class="step" id="s10"><span class="num">10</span>
+        <div class="st-h"><h3>Turn on fuse-t</h3><span class="time">1 min</span></div>
+        <div class="st-b">
+          <ol><li>Open <span class="path">System Settings › General › Login Items &amp; Extensions</span>.</li>
+            <li>Under Extensions, choose <span class="path">By Category › File System Extensions</span> and switch <b>fuse-t</b> on.</li>
+            <li>Click the Ripple icon in the menu bar › <span class="path">Reconnect Drive</span>.</li></ol>
+          <label class="chk"><input type="checkbox" id="c10"> Done</label>
+        </div></li>
+    </ol>
+  </section>
+
+  <section class="fin" aria-labelledby="fin-h">
+    <h2 id="fin-h">You’re set. <em>Here’s how to use it.</em></h2>
+    <dl class="uses">
+      <div><dt>Open any file</dt><dd>Ripple Drive is in Finder’s sidebar, with My Drive and Shared with me. Open files as usual.</dd></div>
+      <div><dt>Upload big files</dt><dd>Right-click a file › Services › Upload to Ripple Drive, or drag it to the Ripple icon in the menu bar.</dd></div>
+      <div><dt>Upload and free space</dt><dd>Right-click › Services › Move to Ripple Drive. The original goes to the Trash once Drive confirms the copy.</dd></div>
+      <div><dt>Find anything</dt><dd>Press <kbd>⌃</kbd><kbd>⌥</kbd><kbd>F</kbd> from any app and type a file name.</dd></div>
+    </dl>
+  </section>
+
+  <section aria-labelledby="help-h">
+    <h2 id="help-h">If something goes wrong</h2>
+    <details><summary>“Google Cloud access blocked”</summary><div><p>Your account needs 2-Step Verification (step 1). Turn it on, wait a few minutes, then refresh.</p></div></details>
+    <details><summary>“Access blocked: Ripple Drive has not completed the Google verification process”</summary><div><p>Your Gmail isn’t a test user yet. Add it under Google Auth Platform › Audience › Test users (step 4).</p></div></details>
+    <details><summary>The Ripple icon turned red</summary><div><p>Google ends the sign-in every 7 days while your Google app is in “Testing”. Click the icon › Sign In Again (1 minute). To stop this for good, see <a href="https://github.com/kundankishore8929-gif/ripple-drive/blob/main/docs/google-setup.md#stop-the-weekly-sign-in" target="_blank" rel="noopener">Stop the weekly sign-in</a>.</p></div></details>
+    <details><summary>Ripple Drive isn’t in Finder</summary><div><p>Check that fuse-t is on (step 10), then click the Ripple icon › Reconnect Drive.</p></div></details>
+    <details><summary>A file I just added says “No such file”</summary><div><p>Click the Ripple icon › Reconnect Drive. It takes about 10 seconds.</p></div></details>
+    <details><summary>The installer says fuse-t is missing</summary><div><p>Install it with Homebrew, then run <code>zsh install.sh</code> again:</p>
+      <div class="cmd"><pre>brew install macos-fuse-t/homebrew-cask/fuse-t</pre><button class="copy" type="button">Copy</button></div></div></details>
+    <details><summary>Remove Ripple Drive</summary><div><p>From the <code>ripple-drive-main</code> folder in Terminal. Your files in Google Drive are not touched:</p>
+      <div class="cmd"><pre>zsh uninstall.sh</pre><button class="copy" type="button">Copy</button></div></div></details>
+  </section>
+
+  <footer>
+    <p>Your files go only between your Mac and your own Google account. Ripple Drive has no server and no sign-up, and nobody else sees your key.</p>
+    <p>Questions? Open an issue on <a href="https://github.com/kundankishore8929-gif/ripple-drive/issues" target="_blank" rel="noopener">GitHub</a>. Free and open source (MIT). Not affiliated with Google.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // Ripple mark: a core and three rings of dots.
+  var ns = "http://www.w3.org/2000/svg", svg = document.getElementById("mark");
+  var rings = [[1, 0, 22, 1], [8, 50, 9.5, 1], [13, 84, 6.4, .7], [18, 118, 4.2, .45]];
+  rings.forEach(function (r) {
+    for (var i = 0; i < r[0]; i++) {
+      var a = (i / r[0]) * Math.PI * 2 - Math.PI / 2 + (r[0] > 1 ? Math.PI / r[0] : 0);
+      if (r[0] > 8 && Math.abs(Math.cos(a + Math.PI / 2)) < .001) continue;
+      var c = document.createElementNS(ns, "circle");
+      c.setAttribute("cx", 128 + r[1] * Math.cos(a)); c.setAttribute("cy", 128 + r[1] * Math.sin(a));
+      c.setAttribute("r", r[2]); c.setAttribute("fill", "currentColor"); c.setAttribute("opacity", r[3]);
+      svg.appendChild(c);
+    }
+  });
+
+  // Copy buttons.
+  document.querySelectorAll(".copy").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var pre = b.parentNode.querySelector("pre"), text = pre.textContent;
+      function ok() { b.textContent = "Copied"; b.classList.add("ok"); setTimeout(function () { b.textContent = "Copy"; b.classList.remove("ok"); }, 1600); }
+      function pick() { var r = document.createRange(); r.selectNodeContents(pre); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Press ⌘C"; }
+      try { navigator.clipboard.writeText(text).then(ok, pick); } catch (e) { pick(); }
+    });
+  });
+
+  // Progress: remembered on this device only.
+  var KEY = "ripple-drive-setup", boxes = Array.prototype.slice.call(document.querySelectorAll(".chk input"));
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+  function render() {
+    var n = 0;
+    boxes.forEach(function (b) { var s = b.closest(".step"); s.classList.toggle("done", b.checked); if (b.checked) n++; });
+    document.getElementById("pbar").style.width = (n / boxes.length * 100) + "%";
+    document.getElementById("ptext").textContent = n + " of " + boxes.length + " done";
+  }
+  boxes.forEach(function (b) {
+    b.checked = !!saved[b.id];
+    b.addEventListener("change", function () {
+      saved[b.id] = b.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+      render();
+    });
+  });
+  render();
+})();
+</script>
+
+</body>
+</html>
