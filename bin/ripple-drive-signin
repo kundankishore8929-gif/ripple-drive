@@ -1,0 +1,37 @@
+#!/bin/zsh
+# Signs Ripple Drive in to Google Drive with your own OAuth client (docs/google-setup.md).
+#   ripple-drive-signin          first time: asks for the client ID/secret, then opens Google's sign-in.
+#                                after that: just signs in again (while your Google app is in Testing mode,
+#                                Google ends the sign-in every 7 days).
+#   ripple-drive-signin --new    start over with a new client ID/secret.
+# Remotes: rd-my (the Google login) and ripple-drive (My Drive + Shared with me, combined; this is what
+# gets mounted). Secrets stay in ~/.config/rclone on the Mac.
+set -e
+RCLONE="$HOME/.local/bin/rclone"
+CONF="$HOME/.config/rclone/rclone.conf"
+[[ -x "$RCLONE" ]] || { print "rclone isn't installed at $RCLONE. Run ./install.sh first."; exit 1 }
+mkdir -p "${CONF:h}"; touch "$CONF"; chmod 600 "$CONF"
+
+if [[ "$1" != "--new" ]] && "$RCLONE" listremotes | grep -qx "rd-my:"; then
+  print "Ripple Drive: signing in again. Google's page opens in your browser:"
+  print "pick your account, then Continue > Allow.\n"
+  "$RCLONE" config reconnect rd-my: --auto-confirm >/dev/null
+else
+  print "Ripple Drive sign-in (you need your Google client ID and secret: see docs/google-setup.md)\n"
+  read "cid?Paste the Google client ID, then press Return: "
+  read -s "csec?Paste the client secret (stays hidden), then press Return: "; print
+  [[ -n "$cid" && -n "$csec" ]] || { print "Both the client ID and the secret are needed."; exit 1 }
+
+  for r in rd-my rd-shared ripple-drive; do "$RCLONE" config delete "$r" >/dev/null 2>&1 || true; done
+
+  print "\nA Google sign-in page opens in your browser."
+  print "Pick your account. On \"Google hasn't verified this app\", click Advanced > Go to Ripple Drive"
+  print "(it's your own app), then Continue > Allow.\n"
+  "$RCLONE" config create rd-my drive client_id="$cid" client_secret="$csec" scope=drive >/dev/null
+  # "Shared with me" reuses the same login through a connection string, so there is one token to renew.
+  "$RCLONE" config create ripple-drive combine \
+    upstreams='"My Drive=rd-my:" "Shared with me=rd-my,shared_with_me:"' --non-interactive >/dev/null
+fi
+
+print "Checking the connection..."
+"$RCLONE" lsd ripple-drive: && print "\nSigned in."

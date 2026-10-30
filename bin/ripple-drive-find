@@ -1,0 +1,166 @@
+#!/usr/bin/python3
+"""Ripple Drive search and share links, used by the menu-bar app's search panel and Finder right-click.
+
+  ripple-drive-find search WORDS... [--limit 12]   JSON list of matches, each with its path inside ~/RippleDrive
+  ripple-drive-find link FILE_ID                   turns on "anyone with the link can view", prints JSON {link}
+  ripple-drive-find link --path ~/RippleDrive/...  the same for a file in the mounted drive
+
+Search runs on Google (Drive API: name contains every word), so nothing is indexed on the Mac. Folder names
+are cached in ~/.config/ripple-drive/folders.json so results turn into paths quickly. The Google login and
+request handling come from ripple-drive-upload (same folder).
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+import time
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+_loader = importlib.machinery.SourceFileLoader("rdu", os.path.join(HERE, "ripple-drive-upload"))
+_spec = importlib.util.spec_from_loader("rdu", _loader)
+rdu = importlib.util.module_from_spec(_spec)
+_loader.exec_module(rdu)
+
+CACHE = os.path.expanduser("~/.config/ripple-drive/folders.json")
+GOOGLE_APPS = "application/vnd.google-apps."
+
+
+class Paths:
+    """Folder id -> (name, parent) with a disk cache; builds 'My Drive/...' or 'Shared with me/...' paths."""
+
+    def __init__(self, g):
+        self.g = g
+        try:
+            with open(CACHE) as f:
+                self.cache = json.load(f)
+        except (OSError, ValueError):
+            self.cache = {}
+        self.dirty = False
+        self.root = self.cache.get("__root__")
+        if not self.root:
+            self.root = self.g.api("GET", "files/root", {"fields": "id"})["id"]
+            self.cache["__root__"] = self.root
+            self.dirty = True
+
+    def folder(self, fid):
+        hit = self.cache.get(fid)
+        if hit and time.time() - hit.get("t", 0) < 7 * 86400:
+            return hit
+        try:
+            d = self.g.api("GET", "files/" + fid, {"fields": "id,name,parents,driveId"})
+            hit = {"name": d["name"], "parent": (d.get("parents") or [None])[0], "drive": bool(d.get("driveId")),
+                   "t": time.time()}
+        except rdu.Failed:                       # a folder we can't see: what's below it is "shared with me"
+            hit = {"name": None, "parent": None, "drive": False, "t": time.time()}
+        self.cache[fid] = hit
+        self.dirty = True
+        return hit
+
+    def of(self, item):
+        """Path of a file inside ~/RippleDrive, or None (shared drives, which the mount doesn't show)."""
+        if item.get("driveId"):
+            return None
+        names, parent = [item["name"]], (item.get("parents") or [None])[0]
+        for _ in range(40):
+            if parent is None:
+                return "Shared with me/" + "/".join(reversed(names))
+            if parent == self.root:
+                return "My Drive/" + "/".join(reversed(names))
+            f = self.folder(parent)
+            if f["drive"]:
+                return None
+            if f["name"] is None:
+                return "Shared with me/" + "/".join(reversed(names))
+            names.append(f["name"])
+            parent = f["parent"]
+        return None
+
+    def save(self):
+        if self.dirty:
+            tmp = CACHE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self.cache, f)
+            os.replace(tmp, CACHE)
+
+
+def search(words, limit):
+    g = rdu.Google()
+    q = (" and ".join("name contains '%s'" % rdu.quote(w) for w in words) + " and trashed = false"
+         " and mimeType != 'application/vnd.google-apps.shortcut'")   # shortcuts would duplicate their targets
+    params = {"q": q, "pageSize": str(limit), "orderBy": "modifiedTime desc",
+              "includeItemsFromAllDrives": "true", "corpora": "allDrives",
+              "fields": "files(id,name,mimeType,size,modifiedTime,parents,webViewLink,driveId)"}
+    try:
+        files = g.api("GET", "files", params)["files"]
+    except rdu.Failed:                           # some queries can't be sorted; try again unsorted
+        params.pop("orderBy")
+        files = g.api("GET", "files", params)["files"]
+    paths = Paths(g)
+    out = []
+    for f in files:
+        kind = f["mimeType"]
+        out.append({"id": f["id"], "name": f["name"],
+                    "folder": kind == rdu.FOLDER,
+                    "googleDoc": kind.startswith(GOOGLE_APPS) and kind != rdu.FOLDER,
+                    "size": int(f["size"]) if f.get("size") else None,
+                    "modified": f.get("modifiedTime"),
+                    "path": None if kind.startswith(GOOGLE_APPS) and kind != rdu.FOLDER else paths.of(f),
+                    "web": f.get("webViewLink")})
+    paths.save()
+    return out
+
+
+def id_from_path(g, path):
+    rel = rdu.normalise_dest(path)
+    parts = rel.split("/")
+    if len(parts) < 2:
+        raise rdu.Failed("pick a file inside My Drive or Shared with me")
+    name = parts.pop()
+    parent = rdu.Folders(g).resolve("/".join(parts)) if len(parts) > 1 or parts[0] == "My Drive" else None
+    if parent is None:                           # directly in "Shared with me"
+        hits = g.find("sharedWithMe and name = '%s' and trashed = false" % rdu.quote(name), "files(id)")
+    else:
+        hits = g.find("'%s' in parents and name = '%s' and trashed = false" % (parent, rdu.quote(name)), "files(id)")
+    if not hits:
+        raise rdu.Failed("not found in Drive: %s" % rel)
+    return hits[0]["id"]
+
+
+def link(file_id=None, path=None):
+    g = rdu.Google()
+    if path:
+        file_id = id_from_path(g, path)
+    restricted = False
+    try:
+        g.api("POST", "files/%s/permissions" % file_id, {"fields": "id"}, {"role": "reader", "type": "anyone"})
+    except rdu.Failed:                           # not ours to share: the link works for people who have access
+        restricted = True
+    d = g.api("GET", "files/" + file_id, {"fields": "webViewLink,name"})
+    return {"link": d["webViewLink"], "name": d["name"], "restricted": restricted}
+
+
+def main():
+    args = sys.argv[1:]
+    try:
+        if args[:1] == ["search"] and len(args) > 1:
+            limit = 12
+            if "--limit" in args:
+                i = args.index("--limit")
+                limit = int(args[i + 1])
+                del args[i:i + 2]
+            words = " ".join(args[1:]).split()
+            print(json.dumps(search(words, limit)))
+        elif args[:1] == ["link"] and len(args) > 1:
+            print(json.dumps(link(path=args[2]) if args[1] == "--path" else link(file_id=args[1])))
+        else:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+    except (rdu.Failed, rdu.Transient) as e:
+        print(json.dumps({"error": str(e)}))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

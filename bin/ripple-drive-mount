@@ -1,0 +1,86 @@
+#!/bin/zsh
+# Mounts Ripple Drive (rclone remote "ripple-drive:") at ~/RippleDrive through fuse-t's FSKit backend.
+# Sparse cache (--vfs-cache-mode full): only the byte ranges an app reads are kept, capped at 2 GB, cleared
+# 15 min after last use, and the disk always keeps 3 GB free. Stream mode (off) can't be used: fuse-t's FSKit
+# backend opens every file read+write, which off mode refuses ("Can't read and write to file").
+# Run by the LaunchAgent com.ripplemedia.ripple-drive at login; safe to run by hand too.
+# Stop: launchctl bootout gui/$(id -u)/com.ripplemedia.ripple-drive   |   Log: ~/Library/Logs/RippleDrive/ripple-drive.log
+
+setopt NO_BG_NICE   # zsh would otherwise lower rclone's priority as a background job
+MNT="${RD_MOUNT:-$HOME/RippleDrive}"
+LOG="$HOME/Library/Logs/RippleDrive"
+mkdir -p "$MNT" "$LOG"
+export CGOFUSE_LIBFUSE_PATH="${RD_LIBFUSE:-/usr/local/lib/libfuse-t.dylib}"   # fuse-t, not macFUSE
+[[ -e "$CGOFUSE_LIBFUSE_PATH" ]] || { echo "fuse-t not found at $CGOFUSE_LIBFUSE_PATH (brew install macos-fuse-t/homebrew-cask/fuse-t)" >&2; exit 1; }
+
+is_mounted() { mount | grep -q " on $MNT " }
+
+# Clear a stale mount left behind by a crash, otherwise the new mount fails.
+if is_mounted; then
+  umount "$MNT" 2>/dev/null || diskutil unmount force "$MNT" >/dev/null 2>&1
+fi
+# Space shown in Finder: the combined drive would count the account twice (My Drive and Shared with me are
+# two views of one account: 10 TB "free" on a 5 TB plan), so its own report is off and the disk size is set
+# to the account's real free space at each mount (last known value if Google can't be reached).
+SPACE_FILE="$HOME/.config/ripple-drive/free-bytes"
+free=$("$HOME/.local/bin/rclone" about rd-my: --json 2>/dev/null \
+  | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["free"])' 2>/dev/null)
+if [[ -n "$free" ]]; then print "$free" > "$SPACE_FILE"; else free=$(cat "$SPACE_FILE" 2>/dev/null); fi
+SPACE_ARGS=()
+if [[ -n "$free" ]]; then
+  # Google counts 1 TB as 1024^4 bytes, Finder as 1000^4. Scaled down by (1000/1024)^4 so Finder shows Google's
+  # own figure (4.89 TB free on a 5 TB plan, as drive.google.com says, not 5.38 TB).
+  shown=$(/usr/bin/python3 -c "print(int($free * (1000 / 1024) ** 4))")
+  SPACE_ARGS=(--disable About --vfs-disk-space-total-size "${shown}B")
+fi
+
+start_rclone() {
+"$HOME/.local/bin/rclone" mount ripple-drive: "$MNT" "${SPACE_ARGS[@]}" \
+  -o backend=fskit \
+  --volname "Ripple Drive" \
+  --cache-dir "$HOME/Library/Caches/RippleDrive" \
+  --vfs-cache-mode full \
+  --vfs-cache-max-size 2G \
+  --vfs-cache-max-age 15m \
+  --vfs-cache-min-free-space 3G \
+  --vfs-cache-poll-interval 30s \
+  --buffer-size 16M \
+  --vfs-read-chunk-size 8M \
+  --vfs-read-ahead 32M \
+  --drive-chunk-size 64M \
+  --dir-cache-time 1000h \
+  --poll-interval 30s \
+  --exclude "._*" \
+  --exclude ".DS_Store" \
+  --log-file "$LOG/ripple-drive.log" \
+  --log-level "${RD_LOG_LEVEL:-NOTICE}" \
+  "$@" &
+RPID=$!
+}
+trap 'kill $RPID 2>/dev/null; wait $RPID; exit 0' TERM INT
+
+# fuse-t needs a few seconds after an unmount: the first mount right after one often "stops before Init".
+# Try up to 4 times, 5 s apart, before handing the restart to launchd (which waits 30 s).
+for attempt in 1 2 3 4; do
+  sleep 5
+  start_rclone "$@"
+  for i in {1..120}; do is_mounted && break; kill -0 $RPID 2>/dev/null || break; sleep 1; done
+  is_mounted && break
+  kill $RPID 2>/dev/null; wait $RPID 2>/dev/null
+  echo "$(date '+%F %T') mount attempt $attempt failed" >&2
+done
+is_mounted || exit 1
+
+# Watchdog: if the mount is gone for two checks in a row while rclone still runs,
+# stop rclone and exit 1 so launchd restarts us.
+misses=0
+while kill -0 $RPID 2>/dev/null; do
+  sleep 20 & wait $!   # interruptible, so launchd stop signals are handled at once
+  if is_mounted; then misses=0; else misses=$((misses + 1)); fi
+  if (( misses >= 2 )); then
+    echo "$(date '+%F %T') mount vanished; restarting rclone" >&2
+    kill $RPID; wait $RPID; exit 1
+  fi
+done
+wait $RPID
+exit 1

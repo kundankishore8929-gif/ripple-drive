@@ -1,0 +1,538 @@
+#!/usr/bin/python3
+"""Ripple Drive uploader: resumable Google Drive uploads read straight from the original file.
+
+  ripple-drive-upload FILE_OR_FOLDER... [--to "My Drive/path"] [--move]
+  ripple-drive-upload --resume     carry on with every unfinished upload (runs at login and every 10 min)
+  ripple-drive-upload --status     list unfinished uploads
+
+Nothing is copied onto the Mac first: each file is read from where it is and sent in 32 MB pieces through
+Google's resumable upload. Every upload's session and confirmed offset live in ~/.config/ripple-drive/uploads/,
+so after a crash, sleep or restart the next run asks Google how many bytes arrived and carries on from there
+(Google keeps a session for one week). Every upload is checked against Drive's MD5; --move then puts the
+original in the Trash. --to also takes a path inside the mounted drive (~/RippleDrive/My Drive/...).
+The menu-bar app steers running uploads with marker files in that folder: <id>.pause, <id>.cancel, .pause-all.
+Login: the rclone remote rd-my made by ripple-drive-signin. Python 3.9 stdlib only (runs under launchd).
+"""
+import argparse
+import fcntl
+import hashlib
+import http.client
+import json
+import mimetypes
+import os
+import subprocess
+import sys
+import time
+import urllib.parse
+import uuid
+from datetime import datetime, timezone
+
+RCLONE = os.path.expanduser("~/.local/bin/rclone")
+STATE = os.path.expanduser("~/.config/ripple-drive/uploads")
+LOG = os.path.expanduser("~/Library/Logs/RippleDrive/uploads.log")
+MOUNT = os.path.expanduser("~/RippleDrive")
+DEFAULT_DEST = "My Drive/Uploads from Mac"
+CHUNK = 32 * 1024 * 1024          # a multiple of 256 KB, as Google requires
+FOLDER = "application/vnd.google-apps.folder"
+JUNK = {".DS_Store", "Icon\r", ".localized"}
+TRIES = 8                         # per request: 1+2+4+...+60 s of backoff, about 4 minutes in all
+
+
+class Transient(Exception):
+    """Network trouble or a Google limit: leave the upload pending for the next run."""
+
+
+class Failed(Exception):
+    """This upload can't succeed as it stands (missing file, bad path, checksum mismatch)."""
+
+
+class Paused(Exception):
+    """The menu-bar app paused this upload (<id>.pause) or all of them (.pause-all)."""
+
+
+class Cancelled(Exception):
+    """The menu-bar app cancelled this upload (<id>.cancel)."""
+
+
+def control(item):
+    """Markers the menu-bar app drops in STATE; checked before every piece."""
+    base = os.path.join(STATE, item["id"])
+    if os.path.exists(base + ".cancel"):
+        raise Cancelled()
+    if os.path.exists(base + ".pause") or os.path.exists(os.path.join(STATE, ".pause-all")):
+        raise Paused()
+
+
+def paused(item):
+    return os.path.exists(os.path.join(STATE, item["id"] + ".pause"))
+
+
+def log(msg):
+    line = "%s %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg)
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(line + "\n")
+    print(msg, flush=True)
+
+
+def human(n):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return ("%.0f %s" if unit in ("B", "KB") else "%.1f %s") % (n, unit)
+        n /= 1024.0
+
+
+# ---- Google ------------------------------------------------------------------------------------------------
+
+class Google:
+    def __init__(self):
+        out = subprocess.run([RCLONE, "config", "dump"], capture_output=True, text=True, check=True).stdout
+        conf = json.loads(out).get("rd-my")
+        if not conf:
+            raise Failed("not signed in: run ripple-drive-signin first")
+        self.client_id, self.client_secret = conf["client_id"], conf["client_secret"]
+        self.refresh_token = json.loads(conf["token"])["refresh_token"]
+        self.access, self.expires = None, 0.0
+        self.conns = {}
+
+    def _token(self):
+        if time.time() > self.expires - 120:
+            body = urllib.parse.urlencode({
+                "client_id": self.client_id, "client_secret": self.client_secret,
+                "refresh_token": self.refresh_token, "grant_type": "refresh_token"})
+            status, _, data = self._send("POST", "https://oauth2.googleapis.com/token", body.encode(),
+                                         {"Content-Type": "application/x-www-form-urlencoded"}, auth=False)
+            if status != 200:
+                raise Failed("Google sign-in expired: run ripple-drive-signin (%s)" % data[:200].decode("utf-8", "replace"))
+            r = json.loads(data)
+            self.access, self.expires = r["access_token"], time.time() + r.get("expires_in", 3600)
+        return self.access
+
+    def _send(self, method, url, body=None, headers=None, auth=True, retry=True):
+        """One request on a kept-alive connection; returns (status, response, body). Retries network errors,
+        429 and 5xx unless retry=False (upload pieces: the caller asks Google what arrived instead)."""
+        u = urllib.parse.urlsplit(url)
+        path = u.path + ("?" + u.query if u.query else "")
+        hdrs = dict(headers or {})
+        delay = 1
+        for attempt in range(TRIES):
+            if auth:
+                hdrs["Authorization"] = "Bearer " + self._token()
+            conn = self.conns.get(u.netloc)
+            try:
+                if conn is None:
+                    conn = self.conns[u.netloc] = http.client.HTTPSConnection(u.netloc, timeout=120)
+                conn.request(method, path, body=body, headers=hdrs)
+                resp = conn.getresponse()
+                data = resp.read()
+            except (OSError, http.client.HTTPException) as e:
+                self.conns.pop(u.netloc, None)
+                if attempt == TRIES - 1 or not retry:
+                    raise Transient("network: %s" % e)
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+            if resp.status == 401 and auth:
+                self.expires = 0                       # token expired early: refresh and try again
+                continue
+            if resp.status == 429 or resp.status >= 500:
+                if attempt == TRIES - 1 or not retry:
+                    raise Transient("Google answered %d" % resp.status)
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+            if resp.status == 403 and (b"RateLimitExceeded" in data or b"rateLimitExceeded" in data):
+                if b"uploadLimitExceeded" in data or b"dailyLimit" in data:
+                    raise Transient("Google's 750 GB daily upload limit reached; carrying on after the reset")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+            if resp.status == 403 and b"uploadLimitExceeded" in data:
+                raise Transient("Google's 750 GB daily upload limit reached; carrying on after the reset")
+            return resp.status, resp, data
+        raise Transient("Google kept refusing %s %s" % (method, u.path))
+
+    def api(self, method, path, params=None, body=None, ok=(200,)):
+        q = dict(params or {}, supportsAllDrives="true")
+        url = "https://www.googleapis.com/drive/v3/" + path + "?" + urllib.parse.urlencode(q)
+        hdrs = {"Content-Type": "application/json"} if body is not None else {}
+        status, _, data = self._send(method, url, json.dumps(body).encode() if body is not None else None, hdrs)
+        if status not in ok:
+            raise Failed("Drive %s %s answered %d: %s" % (method, path, status, data[:300].decode("utf-8", "replace")))
+        return json.loads(data) if data else {}
+
+    def find(self, q, fields="files(id,name,size,md5Checksum)"):
+        return self.api("GET", "files", {"q": q, "fields": fields, "pageSize": "100",
+                                         "includeItemsFromAllDrives": "true"})["files"]
+
+
+def quote(name):
+    return name.replace("\\", "\\\\").replace("'", "\\'")
+
+
+class Folders:
+    """Turns "My Drive/a/b" or "Shared with me/x/y" into a Drive folder id, creating missing folders."""
+
+    def __init__(self, g):
+        self.g, self.cache = g, {}
+
+    def resolve(self, path):
+        path = normalise_dest(path)
+        if path in self.cache:
+            return self.cache[path]
+        parts = path.split("/")
+        top, rest = parts[0], parts[1:]
+        if top == "My Drive":
+            parent = "root"
+        else:                                    # "Shared with me": the first folder is found by name
+            if not rest:
+                raise Failed("pick a folder inside Shared with me")
+            name = rest.pop(0)
+            hits = self.g.find("sharedWithMe and name = '%s' and mimeType = '%s' and trashed = false"
+                               % (quote(name), FOLDER))
+            if not hits:
+                raise Failed("no shared folder called %r" % name)
+            parent = hits[0]["id"]
+        for name in rest:
+            parent = self.child(parent, name)
+        self.cache[path] = parent
+        return parent
+
+    def child(self, parent, name):
+        hits = self.g.find("'%s' in parents and name = '%s' and mimeType = '%s' and trashed = false"
+                           % (parent, quote(name), FOLDER))
+        if hits:
+            return hits[0]["id"]
+        return self.g.api("POST", "files", {"fields": "id"},
+                          {"name": name, "mimeType": FOLDER, "parents": [parent]})["id"]
+
+
+def normalise_dest(path):
+    path = os.path.expanduser(path)
+    if path.startswith(MOUNT + "/") or path == MOUNT:
+        path = path[len(MOUNT):]
+    path = "/".join(p for p in path.split("/") if p)
+    if not path:
+        return "My Drive"
+    if path.split("/")[0] not in ("My Drive", "Shared with me"):
+        path = "My Drive/" + path
+    return path
+
+
+# ---- Queue -------------------------------------------------------------------------------------------------
+
+def state_path(item):
+    return os.path.join(STATE, item["id"] + ".json")
+
+
+def save(item):
+    tmp = state_path(item) + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(item, f, indent=1)
+    os.replace(tmp, state_path(item))
+
+
+def pending():
+    items = []
+    for name in sorted(os.listdir(STATE)):
+        if name.endswith(".json"):
+            try:
+                with open(os.path.join(STATE, name)) as f:
+                    items.append(json.load(f))
+            except (OSError, ValueError):
+                pass
+    return sorted(items, key=lambda i: i["created"])
+
+
+def enqueue(paths, dest, move):
+    dest = normalise_dest(dest)
+    added = 0
+    for p in paths:
+        p = os.path.abspath(os.path.expanduser(p))
+        if p == MOUNT or p.startswith(MOUNT + "/"):
+            log("skipped %s: it is already in Ripple Drive" % p)
+            continue
+        if os.path.isdir(p):
+            root = p.rstrip("/")
+            base = os.path.basename(root)
+            for d, dirs, files in os.walk(root):
+                dirs[:] = sorted(x for x in dirs if not x.startswith("."))
+                rel = os.path.relpath(d, os.path.dirname(root))
+                for name in sorted(files):
+                    if name in JUNK or name.startswith("._"):
+                        continue
+                    added += add(os.path.join(d, name), dest + "/" + rel.replace(os.sep, "/"), move, root)
+            if not added:
+                log("nothing to upload in %s" % base)
+        elif os.path.isfile(p):
+            added += add(p, dest, move, None)
+        else:
+            log("skipped %s: not found" % p)
+    return added
+
+
+def add(src, dest, move, root):
+    st = os.stat(src)
+    item = {"id": uuid.uuid4().hex, "source": src, "name": os.path.basename(src), "dest": dest,
+            "size": st.st_size, "mtime": int(st.st_mtime), "move": move, "root": root,
+            "session": None, "offset": 0, "created": time.time(), "error": None}
+    save(item)
+    return 1
+
+
+# ---- Upload ------------------------------------------------------------------------------------------------
+
+def md5_of(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def start_session(g, item, parent):
+    meta = {"name": item["name"], "parents": [parent],
+            "modifiedTime": datetime.fromtimestamp(item["mtime"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")}
+    ctype = mimetypes.guess_type(item["name"])[0] or "application/octet-stream"
+    url = ("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true"
+           "&fields=id,name,size,md5Checksum")
+    status, resp, data = g._send("POST", url, json.dumps(meta).encode(), {
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": ctype, "X-Upload-Content-Length": str(item["size"])})
+    if status != 200 or not resp.getheader("Location"):
+        raise Failed("Google would not start the upload (%d): %s" % (status, data[:300].decode("utf-8", "replace")))
+    return resp.getheader("Location")
+
+
+def confirmed(resp):
+    """Bytes Google holds, from a 308's Range header ("bytes=0-1234" means 1235)."""
+    rng = resp.getheader("Range")
+    return int(rng.split("-")[1]) + 1 if rng else 0
+
+
+def ask_offset(g, item):
+    status, resp, data = g._send("PUT", item["session"], b"", {"Content-Range": "bytes */%d" % item["size"]})
+    if status == 308:
+        return confirmed(resp), None
+    if status in (200, 201):
+        return item["size"], json.loads(data)
+    if status in (404, 410):
+        return None, None                         # session expired (older than a week): start again
+    raise Failed("Google answered %d when asked about the upload: %s" % (status, data[:200].decode("utf-8", "replace")))
+
+
+def upload(g, folders, item):
+    control(item)
+    src = item["source"]
+    if not os.path.isfile(src):
+        raise Failed("the original is gone: %s" % src)
+    st = os.stat(src)
+    if st.st_size != item["size"] or int(st.st_mtime) != item["mtime"]:
+        log("%s changed since it was queued; starting it again" % item["name"])
+        item.update(size=st.st_size, mtime=int(st.st_mtime), session=None, offset=0)
+
+    parent = folders.resolve(item["dest"])
+    done = None
+    if item["session"]:
+        offset, done = ask_offset(g, item)
+        if offset is None:
+            log("%s: Google's session expired; starting it again" % item["name"])
+            item.update(session=None, offset=0)
+        else:
+            if offset:
+                log("%s: resuming at %s of %s" % (item["name"], human(offset), human(item["size"])))
+            item["offset"] = offset
+    if not item["session"]:
+        twin = [f for f in g.find("'%s' in parents and name = '%s' and trashed = false" % (parent, quote(item["name"])))
+                if int(f.get("size", -1)) == item["size"]]
+        if twin and twin[0].get("md5Checksum") == md5_of(src):
+            log("%s is already in %s; not uploading it again" % (item["name"], item["dest"]))
+            return twin[0]
+        item["session"], item["offset"] = start_session(g, item, parent), 0
+        save(item)
+
+    size, started, sent0 = item["size"], time.time(), item["offset"]
+    misses = 0
+    with open(src, "rb") as f:
+        while done is None:
+            control(item)
+            off = item["offset"]
+            f.seek(off)
+            piece = f.read(CHUNK)
+            last = off + len(piece) - 1
+            hdr = "bytes %d-%d/%d" % (off, last, size) if piece else "bytes */%d" % size
+            try:
+                status, resp, data = g._send("PUT", item["session"], piece, {"Content-Range": hdr}, retry=False)
+            except Transient:
+                status = 503
+            if status == 429 or status >= 500:
+                # A piece may have half-arrived: wait, ask Google what it holds, and go on from there.
+                misses += 1
+                if misses > TRIES:
+                    raise Transient("the connection keeps dropping")
+                time.sleep(min(2 ** misses, 60))
+                offset, done = ask_offset(g, item)
+                if offset is None:
+                    item.update(session=None, offset=0)
+                    save(item)
+                    raise Transient("Google's session expired mid-upload; it starts again next run")
+                item["offset"] = offset
+                save(item)
+                continue
+            misses = 0
+            if status in (200, 201):
+                done = json.loads(data)
+            elif status == 308:
+                item["offset"] = confirmed(resp)
+                save(item)
+                rate = (item["offset"] - sent0) / max(time.time() - started, 0.001)
+                line = "%s: %s of %s (%d%%), %s/s" % (item["name"], human(item["offset"]), human(size),
+                                                      100 * item["offset"] // max(size, 1), human(rate))
+                sys.stdout.write(("\r" + line + "   ") if sys.stdout.isatty() else (line + "\n"))
+                sys.stdout.flush()
+            elif status in (404, 410):
+                item.update(session=None, offset=0)
+                save(item)
+                raise Transient("Google's session expired mid-upload; it starts again next run")
+            else:
+                raise Failed("Google answered %d: %s" % (status, data[:300].decode("utf-8", "replace")))
+    if sys.stdout.isatty():
+        sys.stdout.write("\n")
+    return done
+
+
+def trash(path):
+    """Into the macOS Trash (never a permanent delete). Finder first, so Put Back works."""
+    r = subprocess.run(["osascript", "-e", "on run argv", "-e",
+                        'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)',
+                        "-e", "end run", path], capture_output=True, text=True)
+    if r.returncode == 0:
+        return True
+    home_trash = os.path.expanduser("~/.Trash")
+    if os.stat(path).st_dev == os.stat(home_trash).st_dev:
+        target = os.path.join(home_trash, os.path.basename(path))
+        if os.path.exists(target):
+            target += " %s" % datetime.now().strftime("%H.%M.%S")
+        os.rename(path, target)
+        return True
+    log("could not move %s to the Trash: %s" % (path, r.stderr.strip()))
+    return False
+
+
+def leftovers(root):
+    for d, _, files in os.walk(root):
+        if any(f not in JUNK and not f.startswith("._") for f in files):
+            return True
+    return False
+
+
+def run_queue():
+    g = Google()
+    folders = Folders(g)
+    moved_roots, sent, failed = set(), 0, 0
+    tried = set()
+    while True:
+        # Rescanned after every file, so uploads queued by another run while this one works go too.
+        # FAILED items wait for --retry-failed.
+        if os.path.exists(os.path.join(STATE, ".pause-all")):
+            break
+        items = [i for i in pending() if i["id"] not in tried and not i.get("failed") and not paused(i)]
+        if not items:
+            break
+        item = items[0]
+        tried.add(item["id"])
+        try:
+            result = upload(g, folders, item)
+            local = md5_of(item["source"])
+            if result.get("md5Checksum") and result["md5Checksum"] != local:
+                raise Failed("checksum mismatch after upload (Drive %s, Mac %s); original kept"
+                             % (result["md5Checksum"], local))
+            log("uploaded %s to %s (%s, MD5 matches)" % (item["name"], item["dest"], human(item["size"])))
+            if item["move"] and trash(item["source"]) and item.get("root"):
+                moved_roots.add(item["root"])
+            os.remove(state_path(item))
+            sent += 1
+        except Cancelled:
+            for p in (state_path(item), os.path.join(STATE, item["id"] + ".cancel")):
+                if os.path.exists(p):
+                    os.remove(p)
+            log("%s: cancelled" % item["name"])
+        except Paused:
+            item["error"] = None
+            save(item)
+            log("%s: paused at %s" % (item["name"], human(item["offset"])))
+        except Transient as e:
+            item["error"] = str(e)
+            save(item)
+            log("%s: paused (%s)" % (item["name"], e))
+            if "daily upload limit" in str(e):
+                break
+        except Failed as e:
+            item["error"] = str(e)
+            item["failed"] = True
+            save(item)
+            failed += 1
+            log("%s: FAILED: %s" % (item["name"], e))
+    for root in moved_roots:
+        if os.path.isdir(root) and not leftovers(root):
+            trash(root)
+    return sent, failed
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Resumable uploads to Google Drive, read straight from the original.")
+    ap.add_argument("paths", nargs="*", help="files or folders to upload")
+    ap.add_argument("--to", default=DEFAULT_DEST, help='Drive folder, e.g. "My Drive/Raw archive" (default: %(default)s)')
+    ap.add_argument("--move", action="store_true", help="put the originals in the Trash once Drive's MD5 matches")
+    ap.add_argument("--resume", action="store_true", help="carry on with unfinished uploads")
+    ap.add_argument("--status", action="store_true", help="list unfinished uploads")
+    ap.add_argument("--retry-failed", action="store_true", help="also retry uploads marked FAILED")
+    a = ap.parse_args()
+    os.makedirs(STATE, exist_ok=True)
+
+    if a.status:
+        items = pending()
+        if not items:
+            print("No unfinished uploads.")
+        for i in items:
+            pct = 100 * i["offset"] // max(i["size"], 1)
+            flag = " FAILED: " + i["error"] if i.get("failed") else (" (" + i["error"] + ")" if i.get("error") else "")
+            if paused(i) or os.path.exists(os.path.join(STATE, ".pause-all")):
+                flag += " (paused)"
+            print("%3d%%  %s -> %s  %s%s" % (pct, i["name"], i["dest"], human(i["size"]), flag))
+        return 0
+    if a.paths:
+        n = enqueue(a.paths, a.to, a.move)
+        if n:
+            log("queued %d file%s for %s" % (n, "" if n == 1 else "s", normalise_dest(a.to)))
+    elif not a.resume:
+        ap.print_help()
+        return 1
+    if a.retry_failed:
+        for i in pending():
+            if i.get("failed"):
+                i.update(failed=False, error=None)
+                save(i)
+
+    lock = open(os.path.join(STATE, ".lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        if a.paths:
+            print("Another upload is running; it will send these files when it is done.")
+        return 0
+    if not [i for i in pending() if not i.get("failed")]:
+        return 0
+    try:
+        sent, failed = run_queue()
+    except Failed as e:
+        log("stopped: %s" % e)
+        return 1
+    left = len(pending())
+    if sent or failed or left:
+        log("done: %d uploaded, %d failed, %d still waiting" % (sent, failed, left))
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
