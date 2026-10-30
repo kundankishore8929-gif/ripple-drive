@@ -39,6 +39,8 @@
 
 ## Install (about 15 minutes)
 
+Prefer a click-by-click walkthrough? **[Open the step-by-step setup guide](https://kundankishore8929-gif.github.io/ripple-drive/setup.html)** (copy buttons for every command, progress checklist).
+
 1. **Make your Google client ID** with **[docs/google-setup.md](docs/google-setup.md)**. Keep the client ID and secret handy.
 2. **Download this repo:** the green **Code** button › **Download ZIP**, then unzip it. Or use `git clone`.
 3. **Run the installer** in Terminal from the unzipped folder:
