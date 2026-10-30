@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ripple Drive</title>
+<meta name="description" content="Your whole Google Drive as a disk on your Mac. Files stream as you use them, so they take almost no space. Free and open source.">
+<link rel="icon" href="media/app-icon.png">
+<style>
+  :root { --bg: #07090f; --panel: #0f1420; --line: #1d2535; --text: #eef1f6; --muted: #9aa3b5; --accent: #5b8cff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+  header { text-align: center; padding: 72px 0 32px; }
+  header img { width: 96px; height: 96px; }
+  h1 { font-size: clamp(36px, 7vw, 56px); margin: 16px 0 8px; letter-spacing: -0.02em; }
+  .tag { font-size: clamp(19px, 3.4vw, 24px); margin: 0; }
+  .tag i { font-family: "Hoefler Text", Georgia, serif; color: var(--muted); }
+  .sub { color: var(--muted); max-width: 620px; margin: 16px auto 28px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 10px; background: var(--text); color: var(--bg); text-decoration: none; font-weight: 600; margin: 4px; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  video { width: 100%; border-radius: 14px; border: 1px solid var(--line); display: block; margin: 24px 0 56px; background: #000; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-bottom: 56px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  h2 { font-size: 26px; margin: 0 0 12px; }
+  ol { padding-left: 22px; color: var(--muted); }
+  ol b { color: var(--text); }
+  code { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+  footer { border-top: 1px solid var(--line); margin-top: 56px; padding: 24px 0 40px; color: var(--muted); font-size: 14px; text-align: center; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="media/app-icon.png" alt="">
+    <h1>Ripple Drive</h1>
+    <p class="tag"><b>All of your Drive.</b> <i>None of your disk.</i></p>
+    <p class="sub">Your whole Google Drive as a disk on your Mac. Files open in seconds and stream as you use them, so a 50&nbsp;GB video doesn't need 50&nbsp;GB free. Free and open source.</p>
+    <a class="btn repo" href="#">Get it on GitHub</a>
+    <a class="btn ghost" href="privacy.html">Privacy</a>
+  </header>
+
+  <video src="media/launch-film.mp4" poster="media/poster.jpg" controls playsinline preload="none"></video>
+
+  <div class="grid">
+    <div class="card"><h3>In Finder, in every app</h3><p>My Drive and Shared with me at <code>~/RippleDrive</code>, in the sidebar like any disk.</p></div>
+    <div class="card"><h3>Almost no space</h3><p>Only the parts you read are fetched. The cache stays under 2 GB and clears itself.</p></div>
+    <div class="card"><h3>Uploads that resume</h3><p>Sleep, crash or Wi-Fi drop: it carries on from the last byte, then checks the MD5.</p></div>
+    <div class="card"><h3>Menu-bar app</h3><p>Progress, pause and cancel, a drop tile, ⌃⌥F search and one-click share links.</p></div>
+    <div class="card"><h3>Your own login</h3><p>Your own Google client ID, so your own quota. No server, no account, no tracking.</p></div>
+    <div class="card"><h3>Open source</h3><p>MIT licensed. Built on rclone and fuse-t, for Apple Silicon Macs on macOS 26+.</p></div>
+  </div>
+
+  <h2>Install in about 15 minutes</h2>
+  <ol>
+    <li><b>Make your Google client ID</b> (10 minutes): see the setup guide in the repo.</li>
+    <li><b>Download the repo</b>, then in Terminal run <code>zsh install.sh</code> inside it.</li>
+    <li><b>Turn on fuse-t</b> in System Settings › General › Login Items &amp; Extensions › Extensions.</li>
+  </ol>
+
+  <footer>
+    Ripple Drive is an independent open-source project, not affiliated with or endorsed by Google. Google Drive is a trademark of Google LLC.<br>
+    <a href="privacy.html">Privacy policy</a> · <a class="repo" href="#">Source code</a>
+  </footer>
+</div>
+<script>
+  // Works on any fork: https://<user>.github.io/<repo>/ -> https://github.com/<user>/<repo>
+  (function () {
+    var host = location.hostname, m = host.match(/^([^.]+)\.github\.io$/);
+    var repo = location.pathname.split("/").filter(Boolean)[0];
+    var url = m && repo ? "https://github.com/" + m[1] + "/" + repo : "https://github.com/search?q=ripple-drive";
+    document.querySelectorAll("a.repo").forEach(function (a) { a.href = url; });
+  })();
+</script>
+</body>
+</html>
