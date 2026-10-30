@@ -1,0 +1,7 @@
+.DS_Store
+*.app
+__pycache__/
+*.pyc
+# never commit a login: rclone keeps tokens and client secrets here
+rclone.conf
+*.env
