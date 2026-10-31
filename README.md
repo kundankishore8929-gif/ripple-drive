@@ -1,119 +1,89 @@
 <p align="center">
-  <img src="docs/media/app-icon.png" width="128" alt="Ripple Drive icon">
+  <img src="docs/media/app-icon.png" width="96" alt="Ripple Drive icon">
 </p>
 
 <h1 align="center">Ripple Drive</h1>
 
 <p align="center">
-  <b>All of your Google Drive. None of your disk.</b><br>
-  Your whole Google Drive as a disk on your Mac. Files open in seconds and stream as you use them,
-  so a 50 GB video doesn't need 50 GB free.
+  <b>Your whole Google Drive as a disk on your Mac.</b><br>
+  Files stream as you open them, so a 50 GB video doesn't need 50 GB free.
 </p>
 
 <p align="center">
-  <a href="docs/media/launch-film.mp4"><img src="docs/media/poster.jpg" width="720" alt="Watch the 45-second launch film"></a><br>
-  <sub>▶ Watch the 45-second film</sub>
+  <a href="https://kundankishore8929-gif.github.io/ripple-drive/setup.html"><b>Setup guide</b></a> ·
+  <a href="docs/media/launch-film.mp4">Watch the 50-second film</a> ·
+  <a href="docs/troubleshooting.md">Troubleshooting</a>
 </p>
 
----
+<p align="center">
+  <a href="docs/media/launch-film.mp4"><img src="docs/media/poster.jpg" width="640" alt="Watch the launch film"></a>
+</p>
 
-## What it does
+## What you get
 
-- **Your whole Drive in Finder.** `~/RippleDrive` holds **My Drive** and **Shared with me**, appears in the Finder sidebar, and works with any app that opens files from a disk: video editors, QuickTime, Photoshop.
-- **Almost no space on your Mac.** Only the parts of a file an app actually reads are downloaded. The cache is capped at 2 GB, cleared 15 minutes after you stop using a file, and always leaves 3 GB of your disk free.
-- **Uploads that survive anything.** Big files go up in 32 MB pieces, read straight from the original (no copy first). Sleep, Wi-Fi drops, crashes and restarts are fine: the upload carries on from Google's last confirmed byte. Every upload is checked against Drive's MD5, and **Move** sends the original to the Trash only after that check passes.
-- **A menu-bar app.** It shows status and upload progress (pause or cancel each one), has a drop tile for files dragged from Finder, **⌃⌥F** search by file name across your whole Drive, one-click share links, and **Upload / Move / Copy Link** in Finder's right-click menu.
-- **Stays connected.** It starts at login, and a watchdog remounts the drive within a minute if it drops.
-- **Private by design.** It uses your own Google client ID and talks only to Google. No server, no account, no analytics.
+- **Ripple Drive in Finder's sidebar** with My Drive and Shared with me. It works in any app: Premiere, Resolve, QuickTime, Photoshop.
+- **Almost no disk space used.** Only the parts you open are downloaded, and the cache stays under 2 GB.
+- **Uploads that resume.** If your Wi-Fi drops or your Mac sleeps, the upload carries on from the last byte. It is checked against Drive when done.
+- **A menu-bar app** with upload progress, a drop tile, **⌃⌥F** search across your Drive and one-click share links.
+- **Private.** It uses your own Google key and talks only to Google. There is no server, no account and no tracking.
 
-<p align="center"><img src="docs/media/icon-states.png" width="620" alt="Menu-bar icon states: connected, uploading, upload problem, sign in again, offline"></p>
+**You need:** a Mac with an Apple chip (M1 or later), macOS 26 or later, and a Google account. Setup takes about 30 minutes, once.
 
-## Requirements
+## Setup checklist
 
-| | |
-|---|---|
-| Mac | Apple Silicon (M1 or later) |
-| macOS | 26 or later (uses Apple's FSKit) |
-| Tools | Apple's Command Line Tools (the installer offers them), [Homebrew](https://brew.sh) for fuse-t |
-| Google | Your own free Google Cloud client ID: about 10 minutes, see **[docs/google-setup.md](docs/google-setup.md)** |
+Prefer clicking through it? The [setup guide](https://kundankishore8929-gif.github.io/ripple-drive/setup.html) has the same steps with copy buttons.
 
-## Install (about 15 minutes)
+**Part 1: your free Google key (about 10 min)**
 
-Prefer a click-by-click walkthrough? **[Open the step-by-step setup guide](https://kundankishore8929-gif.github.io/ripple-drive/setup.html)** (copy buttons for every command, progress checklist).
+- [ ] **Turn on 2-Step Verification** at [myaccount.google.com/security](https://myaccount.google.com/security). Google Cloud needs it.
+- [ ] **Create a project** at [console.cloud.google.com](https://console.cloud.google.com): project picker › New project › name it `Ripple Drive` › Create, then select it.
+- [ ] **Turn on the Drive API**: open [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) › Enable.
+- [ ] **Set up the sign-in screen** in [Google Auth Platform](https://console.cloud.google.com/auth/overview) › Get started:
+  - App name `Ripple Drive`, your email, Audience **External** › Create.
+  - Audience › Test users › add your own Gmail.
+  - Data access › Add or remove scopes › paste `https://www.googleapis.com/auth/drive` › Add to table › Update › Save.
+- [ ] **Create your client ID**: Clients › Create client › **Desktop app** › Create.
+  - Save the Client ID and secret in a note, and click Download JSON. Google may not show the secret again.
+  - Never paste the secret anywhere except Terminal.
 
-1. **Make your Google client ID** with **[docs/google-setup.md](docs/google-setup.md)**. Keep the client ID and secret handy.
-2. **Download this repo:** the green **Code** button › **Download ZIP**, then unzip it. Or use `git clone`.
-3. **Run the installer** in Terminal from the unzipped folder:
-   ```bash
-   cd ~/Downloads/ripple-drive-main      # the folder you unzipped
-   zsh install.sh
-   ```
-   It installs fuse-t (through Homebrew) and the official rclone release (checksum-verified), builds the menu-bar app on your Mac, and asks for your client ID and secret. Then Google's sign-in page opens.
-4. **Turn on fuse-t once:** System Settings › General › Login Items & Extensions › Extensions › **By Category** › File System Extensions › **fuse-t** on.
-5. **Done.** **Ripple Drive** appears in the Finder sidebar and the Ripple icon appears in the menu bar.
+**Part 2: install on your Mac (about 15 min)**
 
-Everything installs into your home folder (`~/.local/bin`, `~/Applications`, `~/Library/LaunchAgents`). Run `zsh install.sh` again any time to update.
+- [ ] **Download** this repo: green **Code** button › **Download ZIP**, then open the ZIP.
+- [ ] **Install Homebrew** if `brew --version` in Terminal says "command not found". Get it from [brew.sh](https://brew.sh).
+- [ ] **Run the installer** in Terminal:
+  ```bash
+  cd ~/Downloads/ripple-drive-main
+  zsh install.sh
+  ```
+  It asks for your Mac password, then your Client ID and secret.
+- [ ] **Sign in with Google** in the browser that opens.
+  - On "Google hasn't verified this app", click **Advanced › Go to Ripple Drive**. It's your own app.
+  - Tick the Drive box, then click Continue.
+- [ ] **Turn on fuse-t**: System Settings › General › Login Items & Extensions › Extensions › By Category › File System Extensions › **fuse-t** on.
+- [ ] Click the Ripple icon in the menu bar › **Reconnect Drive**. Ripple Drive now shows in Finder.
 
 ## Daily use
 
 | To | Do this |
 |---|---|
-| Open or play a file | Open it from **Ripple Drive** in Finder, like any disk |
-| Upload big files | Right-click › **Upload to Ripple Drive** (or drag onto the tile under the menu-bar icon) and pick the folder |
-| Upload and free the space | Right-click › **Move to Ripple Drive**: the original goes to the Trash once Drive's checksum matches |
-| Find a file | **⌃⌥F**, type a name. ⏎ opens, ⌘⏎ shows in Finder, ⌘⇧C copies a share link |
-| Share a link | Right-click › **Copy Ripple Drive Link** |
-| Fix a stuck drive | Menu-bar icon › **Reconnect Drive** (about 10 seconds) |
+| Open a file | Open it from Ripple Drive in Finder |
+| Upload big files | Right-click › Services › **Upload to Ripple Drive**, or drag onto the menu-bar icon |
+| Upload and free space | Right-click › Services › **Move to Ripple Drive**. The original goes to the Trash after Drive confirms the copy. |
+| Find a file | **⌃⌥F**, type a name. ⌘⇧C copies its share link. |
+| Fix a stuck drive | Menu-bar icon › **Reconnect Drive** |
 
-From Terminal (add `~/.local/bin` to your `PATH`):
+## Common problems
 
-```bash
-ripple-drive-upload ~/Movies/shoot-day-2 --to "My Drive/Raw archive"
-```
+- **Icon turned red:** your sign-in expired. Click the icon › **Sign In Again**. Google ends it every 7 days while your Google app is in Testing; [publish the app](docs/google-setup.md) to stop this.
+- **"Access blocked … has not completed verification":** add your Gmail as a test user (Part 1, step 4).
+- **Not in Finder:** check that fuse-t is on, then click **Reconnect Drive**.
 
-Add `--move` to that command to send the originals to the Trash once Drive's checksum matches. Use `ripple-drive-upload --status` to list unfinished uploads, `ripple-drive-find search invoice march` to search, and `ripple-drive-signin` to sign in again.
+More fixes: [troubleshooting](docs/troubleshooting.md). How it works: [how-it-works](docs/how-it-works.md).
 
-> **Tip:** for files bigger than a few GB, use **Upload to Ripple Drive** instead of dragging into the drive's window. The uploader reads straight from the original; a Finder copy is staged in the cache first.
+## Update or uninstall
 
-## How it works
+To update, download the ZIP again and run `zsh install.sh`. To uninstall, run `zsh uninstall.sh` (add `--all` to also remove the Google sign-in). Your files in Google Drive are never touched.
 
-```
-Finder / any app
-      │  reads and writes
-      ▼
-Apple FSKit ──► fuse-t ──► rclone (sparse cache, 2 GB max) ──► Google Drive API
-                                                            ▲
-Menu-bar app ──► ripple-drive-upload (resumable) ───────────┤
-             └─► ripple-drive-find (search, links) ─────────┘
-```
+---
 
-When an app reads a file, rclone fetches only that byte range from Google, in 8 MB pieces, and keeps it in a small sparse cache. Uploads skip the cache: they go straight from the original file to Google's resumable-upload API.
-
-More detail: **[docs/how-it-works.md](docs/how-it-works.md)**. Problems: **[docs/troubleshooting.md](docs/troubleshooting.md)**.
-
-## Good to know
-
-- **Weekly sign-in while your Google app is in "Testing".** Google ends the sign-in every 7 days for unpublished apps. The icon turns red; click **Sign In Again**. To stop this, publish your Google app (see [google-setup.md](docs/google-setup.md#stop-the-weekly-sign-in)).
-- **"Google hasn't verified this app"** appears at sign-in. That's expected: it's your own app. Click Advanced › Go to Ripple Drive.
-- **Google's limits apply:** 750 GB of uploads per day per account, and 5 TB per file.
-- **New folders made elsewhere** show up within about 20 seconds. If a path you just tried still says "not found", choose **Reconnect Drive**.
-
-## Uninstall
-
-```bash
-zsh uninstall.sh
-```
-
-Add `--all` to also remove the Google sign-in. Your files in Google Drive are never touched.
-
-## Built with
-
-- [rclone](https://rclone.org) (MIT): Google Drive access, caching and mounting
-- [fuse-t](https://www.fuse-t.org): a kext-free FUSE for macOS, here on its FSKit backend. Free for non-commercial use; check its licence before any commercial use
-- Swift + AppKit for the menu-bar app, Python 3 (standard library only) for uploads and search
-
-## Licence
-
-[MIT](LICENSE) © 2026 Kundan Kishore
-
-Ripple Drive is an independent project and is not affiliated with or endorsed by Google. Google Drive is a trademark of Google LLC.
+Built on [rclone](https://rclone.org) (MIT) and [fuse-t](https://www.fuse-t.org) (free for non-commercial use). MIT © 2026 Kundan Kishore. Not affiliated with Google.
