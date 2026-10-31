@@ -892,6 +892,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
+/// A menu-bar app has no menu bar, and macOS sends ⌘X/⌘C/⌘V/⌘A/⌘Z to text fields only through the Edit menu, so
+/// pasting into the chooser's New Folder name or the search field did nothing. This menu is never shown; it only
+/// gives those keys back.
+func editMenu() -> NSMenu {
+    let edit = NSMenu(title: "Edit")
+    edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+    edit.addItem(.separator())
+    edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    let main = NSMenu()
+    main.addItem(NSMenuItem())                  // the first item is always the app menu
+    let item = NSMenuItem()
+    item.submenu = edit
+    main.addItem(item)
+    return main
+}
+
 // `RippleDrive --render-icon DIR`: writes the menu-bar icon's states as 8x PNGs (for checking the drawing).
 if let i = CommandLine.arguments.firstIndex(of: "--render-icon"), i + 1 < CommandLine.arguments.count {
     let dir = CommandLine.arguments[i + 1]
@@ -929,4 +949,5 @@ let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
+app.mainMenu = editMenu()
 app.run()
