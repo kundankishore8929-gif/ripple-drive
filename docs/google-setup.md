@@ -25,9 +25,9 @@ Open **Google Auth Platform** (APIs & Services › OAuth consent screen) and cli
 
 ## 4. Create the client
 
-**Clients** › **Create client** › application type **Desktop app** › name **Ripple Drive Mac** › **Create**.
+**Clients** › **Create client** › application type **Desktop app** › name **Ripple Drive** › **Create**.
 
-Copy the **client ID** and **client secret**. You paste them into the installer (or `ripple-drive-signin`) in Terminal. They're stored only in `~/.config/rclone/rclone.conf` on your Mac (readable only by you).
+Copy the **client ID** and **client secret**. You paste them into the installer (or `ripple-drive-signin`) in Terminal on a Mac or PowerShell on Windows. They're stored only on your computer: `~/.config/rclone/rclone.conf` on a Mac (readable only by you), `%APPDATA%\rclone\rclone.conf` on Windows (inside your own user folder).
 
 **Never put the secret in a repo, an issue or a chat.**
 

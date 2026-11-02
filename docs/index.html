@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ripple Drive</title>
-<meta name="description" content="Your whole Google Drive as a disk on your Mac. Files stream as you use them, so they take almost no space. Free and open source.">
+<meta name="description" content="Your whole Google Drive as a disk on your Mac, or a drive on your Windows PC (beta). Files stream as you use them, so they take almost no space. Free and open source.">
 <link rel="icon" href="media/app-icon.png">
 <style>
   :root { --bg: #07090f; --panel: #0f1420; --line: #1d2535; --text: #eef1f6; --muted: #9aa3b5; --accent: #5b8cff; }
@@ -39,7 +39,7 @@
     <img src="media/app-icon.png" alt="">
     <h1>Ripple Drive</h1>
     <p class="tag"><b>All of your Drive.</b> <i>None of your disk.</i></p>
-    <p class="sub">Your whole Google Drive as a disk on your Mac. Files open in seconds and stream as you use them, so a 50&nbsp;GB video doesn't need 50&nbsp;GB free. Free and open source.</p>
+    <p class="sub">Your whole Google Drive as a disk on your Mac, or a drive on your Windows PC (beta). Files open in seconds and stream as you use them, so a 50&nbsp;GB video doesn't need 50&nbsp;GB free. Free and open source.</p>
     <a class="btn repo" href="#">Get it on GitHub</a>
     <a class="btn ghost" href="setup.html">Setup guide</a>
     <a class="btn ghost" href="privacy.html">Privacy</a>
@@ -48,19 +48,19 @@
   <video src="media/launch-film.mp4" poster="media/poster.jpg" controls playsinline preload="none"></video>
 
   <div class="grid">
-    <div class="card"><h3>In Finder, in every app</h3><p>My Drive and Shared with me at <code>~/RippleDrive</code>, in the sidebar like any disk.</p></div>
+    <div class="card"><h3>In Finder or File Explorer</h3><p>My Drive and Shared with me, in Finder's sidebar on a Mac or as <code>R:</code> on Windows, and in every app.</p></div>
     <div class="card"><h3>Almost no space</h3><p>Only the parts you read are fetched. The cache stays under 2 GB and clears itself.</p></div>
     <div class="card"><h3>Uploads that resume</h3><p>Sleep, crash or Wi-Fi drop: it carries on from the last byte, then checks the MD5.</p></div>
-    <div class="card"><h3>Menu-bar app</h3><p>Progress, pause and cancel, a drop tile, ⌃⌥F search and one-click share links.</p></div>
+    <div class="card"><h3>A small app by the clock</h3><p>Progress, pause and cancel, drag-and-drop uploads, ⌃⌥F / Ctrl+Alt+F search and one-click share links.</p></div>
     <div class="card"><h3>Your own login</h3><p>Your own Google client ID, so your own quota. No server, no account, no tracking.</p></div>
-    <div class="card"><h3>Open source</h3><p>MIT licensed. Built on rclone and fuse-t, for Apple Silicon Macs on macOS 26+.</p></div>
+    <div class="card"><h3>Open source</h3><p>MIT licensed. Built on rclone, with fuse-t on Apple Silicon Macs (macOS 26+) and WinFsp on Windows 10/11 (beta).</p></div>
   </div>
 
   <h2>Install in about 15 minutes</h2>
   <ol>
-    <li><b>Make your Google client ID</b> (10 minutes): follow the <a href="setup.html">step-by-step setup guide</a>.</li>
-    <li><b>Download the repo</b>, then in Terminal run <code>zsh install.sh</code> inside it.</li>
-    <li><b>Turn on fuse-t</b> in System Settings › General › Login Items &amp; Extensions › Extensions.</li>
+    <li><b>Make your Google client ID</b> (10 minutes, same on Mac and Windows): follow the <a href="setup.html">step-by-step setup guide</a>.</li>
+    <li><b>Download the repo</b>, then run the installer inside it. Mac, in Terminal: <code>zsh install.sh</code>. Windows, in PowerShell: <code>powershell -ExecutionPolicy Bypass -File windows\install.ps1</code>.</li>
+    <li><b>Mac:</b> turn on fuse-t in System Settings › General › Login Items &amp; Extensions › Extensions. <b>Windows:</b> nothing more; your Drive is <code>R:</code> in File Explorer.</li>
   </ol>
 
   <footer>

@@ -66,3 +66,22 @@ The app pauses and cancels uploads by dropping marker files (`<id>.pause`, `<id>
 My Drive and Shared with me are two views of one account, so the combined remote would count your free space twice. The mount script turns that report off (`--disable About`). Instead it sets the disk size to your account's real free space (`--vfs-disk-space-total-size`).
 
 Google counts a terabyte as 1024⁴ bytes and Finder as 1000⁴, so the figure is scaled to match what drive.google.com shows.
+
+## On Windows (beta)
+
+Same design, with Windows pieces where the Mac ones can't go. Everything lives in `%LOCALAPPDATA%\RippleDrive` (no admin rights), except WinFsp.
+
+| File | Installed to | Job |
+|---|---|---|
+| `windows/install.ps1` | – | Checks the PC, installs WinFsp (winget, or the signed installer from WinFsp's GitHub), finds or installs Python, downloads the official rclone (checksum-verified), copies the scripts, builds the tray app and adds the right-click menu and start at login. |
+| `windows/ripple-drive-mount.ps1` | `bin\` | Mounts `ripple-drive:` as a drive letter (`R:` unless taken) through WinFsp, with the same cache settings as the Mac, sets the disk size, and runs a watchdog. |
+| `windows/ripple-drive-signin.ps1` | `bin\` | The same two rclone remotes as on the Mac. |
+| `bin/ripple-drive-upload`, `bin/ripple-drive-find` | `bin\` | The same Python scripts as on the Mac. On Windows they keep their queue in `uploads\`, lock it with `msvcrt`, and Move sends originals to the Recycle Bin. |
+| `windows/RippleDrive.cs` | `bin\RippleDrive.exe` | The tray app, compiled on your PC by `windows/build.ps1` with the C# compiler built into Windows (.NET Framework 4), so there's nothing to download and no runtime to install. It starts the drive script hidden and starts it again if it stops, runs `ripple-drive-upload --resume` every 10 minutes, shows progress, and registers **Ctrl+Alt+F**. |
+| rclone | `bin\rclone.exe` | Official release. |
+| WinFsp | `C:\Program Files (x86)\WinFsp` | Lets Windows show the drive (a signed driver, like fuse-t on the Mac). |
+
+- **Right-click menu:** a "Ripple Drive" submenu on files and folders (`HKCU\Software\Classes\*\shell\RippleDrive`). Explorer starts the app once per selected file; each copy hands its file to the running app, which waits a moment and asks for the folder once for the whole selection.
+- **Folder chooser:** Windows' own Select Folder dialog, opening at `R:\My Drive` with your last six folders pinned on the left.
+- **Disk space shown in File Explorer:** set from your account's free space at each mount. File Explorer counts a terabyte as 1024⁴ bytes like Google, so the figure needs no scaling.
+- **Tests:** [`.github/workflows/windows.yml`](../.github/workflows/windows.yml) runs on GitHub's Windows machines after every change: install, the tray app's self-test, the uploader's Windows parts, a real WinFsp drive (a test folder stands in for Google Drive) and uninstall.

@@ -1,5 +1,7 @@
 # Troubleshooting
 
+## Mac
+
 Logs are in `~/Library/Logs/RippleDrive/`. Open them from the menu-bar icon › **Show Logs**.
 
 | Log | What's in it |
@@ -25,9 +27,44 @@ For more detail, run the mount by hand: `RD_LOG_LEVEL=INFO ripple-drive-mount`.
 | "Access blocked: Ripple Drive has not completed the Google verification process" | Your Google account isn't a test user. Add it under Google Auth Platform › Audience › Test users. |
 | Uploads stop at the same point every day | Google allows 750 GB of uploads per account per day. They carry on the next day. |
 
-## Start over
+### Start over (Mac)
 
 ```bash
 ripple-drive-signin --new          # new client ID / account
 zsh uninstall.sh && zsh install.sh # fresh install (keeps your sign-in)
+```
+
+## Windows (beta)
+
+Logs are in `%LOCALAPPDATA%\RippleDrive\logs\`. Open them from the taskbar icon › **Show Logs**.
+
+| Log | What's in it |
+|---|---|
+| `ripple-drive.log` | The drive (rclone) |
+| `mount.log` | Starting the drive, the drive letter, restarts |
+| `uploads.log` | Uploads |
+| `app.log` | The tray app |
+
+For more detail, run the drive by hand in PowerShell (it keeps running until you press Ctrl+C):
+`powershell -ExecutionPolicy Bypass -File $env:LOCALAPPDATA\RippleDrive\bin\ripple-drive-mount.ps1 -LogLevel INFO`
+
+| Problem | Fix |
+|---|---|
+| "Running scripts is disabled on this system" | Run the installer with the full line: `powershell -ExecutionPolicy Bypass -File windows\install.ps1`. It lets this one script run without changing any Windows setting. |
+| No **R:** drive in File Explorer | Taskbar icon › **Reconnect Drive**, then wait 10 seconds. If the menu says "Not signed in", choose **Sign In**. Then look at `mount.log`. |
+| `mount.log` says the drive letter is used by something else | Run the installer again with another letter, for example `... install.ps1 -Drive S:`. |
+| `mount.log` says WinFsp isn't installed | Get it from [winfsp.dev/rel](https://winfsp.dev/rel/), then run the installer again. |
+| Icon is **red** | Google ended the sign-in. Taskbar icon › **Sign In Again**. |
+| Icon is **faded** | You're offline, or the drive stopped. Choose **Reconnect Drive**. |
+| I can't see the icon | It's in the hidden icons: click **^** by the clock and drag the Ripple icon onto the taskbar. |
+| No "Ripple Drive" in the right-click menu | On Windows 11 it's under **Show more options** (or Shift + right-click). |
+| **Ctrl+Alt+F** does nothing | Another app already uses that shortcut. Use the taskbar icon › **Search Drive…** instead. |
+| "Python 3 is needed" | Install it from [python.org](https://www.python.org/downloads/) with "Add python.exe to PATH" ticked, then run the installer again. |
+| A big copy into R: is slow or fills the disk | Use right-click › **Ripple Drive › Upload to Ripple Drive** instead. It reads straight from the original. |
+
+### Start over (Windows, in PowerShell)
+
+```powershell
+ripple-drive-signin --new                                                  # new client ID / account
+powershell -ExecutionPolicy Bypass -File windows\uninstall.ps1           # then run install.ps1 again
 ```
