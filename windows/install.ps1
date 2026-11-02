@@ -159,10 +159,14 @@ if (-not (Test-Path -LiteralPath $Exe)) { Fail "The tray app didn't build (see t
 
 # Start at login, the Start menu, and a "Ripple Drive" submenu on files and folders in File Explorer
 # (Windows 11: under "Show more options").
-$run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $prefs = $null
-try { $prefs = Get-Content -LiteralPath (Join-Path $Base "app.json") -Raw | ConvertFrom-Json } catch {}
-if (-not $prefs -or $prefs.startAtLogin -ne $false) { Set-ItemProperty -Path $run -Name "Ripple Drive" -Value "`"$Exe`"" }
+$prefsPath = Join-Path $Base "app.json"
+if (Test-Path -LiteralPath $prefsPath) { try { $prefs = Get-Content -LiteralPath $prefsPath -Raw | ConvertFrom-Json } catch {} }
+if (-not $prefs -or $prefs.startAtLogin -ne $false) {     # unless you turned Start at Login off in the app
+  $run = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Microsoft\Windows\CurrentVersion\Run")
+  $run.SetValue("Ripple Drive", "`"$Exe`"")
+  $run.Close()
+}
 $lnk = Join-Path ([Environment]::GetFolderPath("Programs")) "Ripple Drive.lnk"
 $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
 $sc.TargetPath = $Exe; $sc.IconLocation = "$Exe,0"; $sc.Description = "Your Google Drive as a drive on this PC"; $sc.Save()
