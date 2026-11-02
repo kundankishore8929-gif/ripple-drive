@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 """Ripple Drive search and share links, used by the menu-bar app's search panel and Finder right-click.
 
-  ripple-drive-find search WORDS... [--limit 12]   JSON list of matches, each with its path inside ~/RippleDrive
+  ripple-drive-find search WORDS... [--limit 12]   JSON list of matches, each with its path inside the drive
   ripple-drive-find link FILE_ID                   turns on "anyone with the link can view", prints JSON {link}
-  ripple-drive-find link --path ~/RippleDrive/...  the same for a file in the mounted drive
+  ripple-drive-find link --path ~/RippleDrive/...  the same for a file in the mounted drive (Windows: R:\\...)
 
-Search runs on Google (Drive API: name contains every word), so nothing is indexed on the Mac. Folder names
-are cached in ~/.config/ripple-drive/folders.json so results turn into paths quickly. The Google login and
-request handling come from ripple-drive-upload (same folder).
+Search runs on Google (Drive API: name contains every word), so nothing is indexed on the computer. Folder
+names are cached in folders.json next to the upload queue so results turn into paths quickly. The Google
+login, paths and request handling come from ripple-drive-upload (same folder).
 """
 import importlib.machinery
 import importlib.util
@@ -22,7 +22,7 @@ _spec = importlib.util.spec_from_loader("rdu", _loader)
 rdu = importlib.util.module_from_spec(_spec)
 _loader.exec_module(rdu)
 
-CACHE = os.path.expanduser("~/.config/ripple-drive/folders.json")
+CACHE = os.path.join(rdu.CONFIG, "folders.json")
 GOOGLE_APPS = "application/vnd.google-apps."
 
 
