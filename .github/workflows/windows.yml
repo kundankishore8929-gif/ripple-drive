@@ -86,8 +86,11 @@ jobs:
           $buf = New-Object byte[] (8MB); $n = 0; while ($n -lt 8MB) { $r = $fs.Read($buf, $n, 8MB - $n); if ($r -le 0) { break }; $n += $r }; $fs.Close()
           Add-Type -Namespace RD -Name Disk -MemberDefinition '[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern uint GetCompressedFileSizeW(string p, out uint h);'
           $cached = 0
-          Get-ChildItem "$base\cache" -Recurse -File | ForEach-Object { $h = 0; $l = [RD.Disk]::GetCompressedFileSizeW($_.FullName, [ref]$h); $cached += [double]$h * 4GB + $l }
-          "cache on disk after reading 8 MB of a 300 MB file: $([math]::Round($cached / 1MB, 1)) MB"
+          $files = @(Get-ChildItem "$base\cache" -Recurse -File)
+          $files | ForEach-Object { [uint32]$h = 0; $l = [RD.Disk]::GetCompressedFileSizeW($_.FullName, [ref]$h); $cached += [double]$h * 4GB + $l }
+          $logical = ($files | Measure-Object Length -Sum).Sum
+          "cache after reading 8 MB of a 300 MB file: $($files.Count) file(s), $([math]::Round($logical / 1MB, 1)) MB long, $([math]::Round($cached / 1MB, 1)) MB on disk"
+          $files | Select-Object -First 5 | ForEach-Object { "  $($_.FullName.Substring($base.Length)) $([math]::Round($_.Length / 1MB, 1)) MB" }
           if ($cached -gt 100MB) { throw "the cache holds the whole file instead of the part that was read" }
           Set-Content "$drive\My Drive\written.txt" "written through the drive"
           for ($i = 0; $i -lt 30 -and -not (Test-Path "$root\My Drive\written.txt"); $i++) { Start-Sleep 1 }
