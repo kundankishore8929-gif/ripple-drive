@@ -1,0 +1,124 @@
+# Windows checks for Ripple Drive (beta), on GitHub's own Windows machines, after every change to the Windows
+# version or the shared scripts: install, the tray app, the uploader's Windows parts, a real WinFsp drive (a test
+# folder stands in for Google Drive, since the test machine has no Google account) and uninstall.
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    paths: ["windows/**", "bin/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["windows/**", "bin/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell       # Windows PowerShell 5.1, what every Windows 10/11 PC has
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install (no sign-in, no start)
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File windows\install.ps1 -NoSignin -NoStart
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed ($LASTEXITCODE)" }
+
+      - name: Check what was installed
+        run: |
+          $base = "$env:LOCALAPPDATA\RippleDrive"
+          $want = "bin\rclone.exe", "bin\RippleDrive.exe", "bin\ripple-drive-upload", "bin\ripple-drive-find",
+                  "bin\ripple-drive-mount.ps1", "bin\ripple-drive-signin.ps1", "bin\ripple-drive-upload.cmd",
+                  "bin\ripple-drive-find.cmd", "bin\ripple-drive-signin.cmd", "settings.json"
+          foreach ($f in $want) { if (-not (Test-Path -LiteralPath (Join-Path $base $f))) { throw "missing $f" } }
+          Get-Content "$base\settings.json"
+          & "$base\bin\rclone.exe" version
+          $hkcu = [Microsoft.Win32.Registry]::CurrentUser
+          foreach ($k in "Software\Classes\*\shell\RippleDrive\shell\1upload\command", "Software\Classes\*\shell\RippleDrive\shell\3link\command",
+                         "Software\Classes\Directory\shell\RippleDrive\shell\2move\command") {
+            $key = $hkcu.OpenSubKey($k); if (-not $key) { throw "missing registry key $k" }; "$k = $($key.GetValue(''))"
+          }
+          if (-not (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ripple Drive" -ErrorAction SilentlyContinue)) { throw "no start-at-login entry" }
+          if (-not (Test-Path "$([Environment]::GetFolderPath('Programs'))\Ripple Drive.lnk")) { throw "no Start menu shortcut" }
+          $py = (Get-Content "$base\settings.json" -Raw | ConvertFrom-Json).python
+          & $py "$base\bin\ripple-drive-upload" --status
+          if ($LASTEXITCODE -ne 0) { throw "ripple-drive-upload --status failed" }
+
+      - name: Tray app self-test
+        run: |
+          $base = "$env:LOCALAPPDATA\RippleDrive"
+          # A queued upload, so the menu has an upload row to build.
+          $item = @{ id = "test0001"; source = "C:\Windows\win.ini"; name = "win.ini"; dest = "My Drive/Test"; size = 92; mtime = 0;
+                     move = $false; root = $null; session = $null; offset = 46; created = 1.5; error = $null } | ConvertTo-Json
+          [IO.File]::WriteAllText("$base\uploads\test0001.json", $item)
+          $p = Start-Process "$base\bin\RippleDrive.exe" -ArgumentList "--selftest", "$env:RUNNER_TEMP\selftest.txt" -Wait -PassThru
+          Get-Content "$env:RUNNER_TEMP\selftest.txt"
+          Remove-Item "$base\uploads\test0001.json"
+          if ($p.ExitCode -ne 0) { throw "self-test failed" }
+          if (-not (Select-String -Path "$env:RUNNER_TEMP\selftest.txt" -Pattern "win.ini" -Quiet)) { throw "the upload row is missing from the menu" }
+
+      - name: Uploader on Windows (paths, lock, Recycle Bin, junk files)
+        run: |
+          $py = (Get-Content "$env:LOCALAPPDATA\RippleDrive\settings.json" -Raw | ConvertFrom-Json).python
+          & $py -I windows\tests\test_windows.py
+          if ($LASTEXITCODE -ne 0) { throw "uploader tests failed" }
+
+      - name: Real drive through WinFsp (a test folder stands in for Google Drive)
+        run: |
+          $base = "$env:LOCALAPPDATA\RippleDrive"
+          $rc = "$base\bin\rclone.exe"
+          $drive = (Get-Content "$base\settings.json" -Raw | ConvertFrom-Json).drive
+          $root = "$env:RUNNER_TEMP\fake drive"
+          New-Item -ItemType Directory -Force -Path "$root\My Drive\Raw", "$root\Shared with me" | Out-Null
+          Set-Content "$root\My Drive\hello.txt" "hello from the test"
+          $big = [IO.File]::Create("$root\My Drive\Raw\big.bin"); $big.SetLength(300MB); $big.Close()
+          & $rc config create ripple-drive alias "remote=$root" | Out-Null
+          $p = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$base\bin\ripple-drive-mount.ps1`" -LogLevel INFO" -PassThru -WindowStyle Hidden
+          for ($i = 0; $i -lt 90 -and -not (Test-Path "$drive\"); $i++) { Start-Sleep 1 }
+          if (-not (Test-Path "$drive\")) { Get-Content "$base\logs\*.log" -ErrorAction SilentlyContinue; throw "the drive didn't mount" }
+          Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -eq $drive.TrimEnd(':') } | Format-Table Name, Used, Free, Description
+          Get-ChildItem "$drive\" -Force | Format-Table Name
+          if ((Get-Content "$drive\My Drive\hello.txt") -ne "hello from the test") { throw "reading through the drive failed" }
+          # Read 8 MB from the middle of a 300 MB file: only about that much should land in the cache.
+          $fs = [IO.File]::OpenRead("$drive\My Drive\Raw\big.bin"); $fs.Seek(150MB, 'Begin') | Out-Null
+          $buf = New-Object byte[] (8MB); $n = 0; while ($n -lt 8MB) { $r = $fs.Read($buf, $n, 8MB - $n); if ($r -le 0) { break }; $n += $r }; $fs.Close()
+          Add-Type -Namespace RD -Name Disk -MemberDefinition '[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern uint GetCompressedFileSizeW(string p, out uint h);'
+          $cached = 0
+          Get-ChildItem "$base\cache" -Recurse -File | ForEach-Object { $h = 0; $l = [RD.Disk]::GetCompressedFileSizeW($_.FullName, [ref]$h); $cached += [double]$h * 4GB + $l }
+          "cache on disk after reading 8 MB of a 300 MB file: $([math]::Round($cached / 1MB, 1)) MB"
+          if ($cached -gt 100MB) { throw "the cache holds the whole file instead of the part that was read" }
+          Set-Content "$drive\My Drive\written.txt" "written through the drive"
+          for ($i = 0; $i -lt 30 -and -not (Test-Path "$root\My Drive\written.txt"); $i++) { Start-Sleep 1 }
+          if (-not (Test-Path "$root\My Drive\written.txt")) { throw "a file written to the drive never reached the remote" }
+          taskkill /PID $p.Id /T /F | Out-Null
+          Start-Sleep 3
+          if (Test-Path "$drive\") { throw "the drive stayed after the mount script was stopped" }
+          Get-Content "$base\logs\mount.log"
+          & $rc config delete ripple-drive
+
+      - name: Tray app runs, and a second copy hands over its job
+        run: |
+          $base = "$env:LOCALAPPDATA\RippleDrive"
+          $p = Start-Process "$base\bin\RippleDrive.exe" -PassThru
+          Start-Sleep 10
+          if ($p.HasExited) { Get-Content "$base\logs\app.log" -ErrorAction SilentlyContinue; throw "the tray app quit by itself (exit $($p.ExitCode))" }
+          $second = Start-Process "$base\bin\RippleDrive.exe" -ArgumentList "--link", "C:\Windows\win.ini" -PassThru -Wait
+          Start-Sleep 3
+          $left = @(Get-ChildItem "$base\requests" -Filter *.json -ErrorAction SilentlyContinue)
+          if ($left.Count -gt 0) { throw "the running app didn't pick up the second copy's request" }
+          if ($p.HasExited) { throw "the tray app quit after the request" }
+          Get-Content "$base\logs\app.log"
+          Stop-Process -Id $p.Id -Force
+
+      - name: Uninstall
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File windows\uninstall.ps1 -All -Yes
+          if (Test-Path "$env:LOCALAPPDATA\RippleDrive") { throw "files were left behind" }
+          if ([Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\*\shell\RippleDrive")) { throw "right-click menu left behind" }
+          if (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ripple Drive" -ErrorAction SilentlyContinue) { throw "start-at-login entry left behind" }
+
+      - name: Logs
+        if: failure()
+        run: Get-ChildItem "$env:LOCALAPPDATA\RippleDrive\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 80 }
